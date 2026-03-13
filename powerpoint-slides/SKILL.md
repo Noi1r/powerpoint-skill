@@ -461,6 +461,14 @@ print('OK: no residual placeholders')
 "
 ```
 
+**5a-post2. Overlap & boundary check** (after OMML injection):
+```bash
+python ~/.claude/skills/powerpoint-slides/scripts/check_overlaps.py output.pptx
+```
+If exit code is non-zero (critical/major issues found), fix the JS script and re-run.
+The checker is card-aware: it groups card internals (container rect + accent bar + title + body)
+to avoid false positives. It detects: element overlaps, bottom-edge overflow, and tight gaps.
+
 **5d. Content verification**:
 ```bash
 pip install -q "markitdown[pptx]" 2>/dev/null
