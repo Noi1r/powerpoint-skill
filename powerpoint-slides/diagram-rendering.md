@@ -116,19 +116,33 @@ See `pptxgenjs-reference.md` → Shapes section for API.
 
 ## Layer 5: PDF Figure Extraction
 
-Extract figures from research papers.
+Extract figures from research papers. **Dual-path pipeline**: MCP `pdf_extract_images` (primary) → `pdftoppm` + Pillow crop (fallback).
 
-**Workflow:**
+**Routing logic:**
+
+| Condition | Method | Reason |
+|-----------|--------|--------|
+| No `crop`, PDF accessible | MCP `pdf_extract_images` | Extracts original embedded image objects — preserves native resolution |
+| `crop` specified | `pdftoppm` + Pillow | Page-region extraction needs rasterized full page |
+| MCP returns no images on target page | `pdftoppm` fallback | Page may contain only vector graphics (no embedded image objects) |
+| MCP unavailable / errors | `pdftoppm` fallback | Graceful degradation |
+
+**Primary path — MCP extraction:**
 1. Identify target page(s) via `pdf_get_toc` / `pdf_read_pages`
-2. Extract: `pdftoppm -png -r 300 -f PAGE -l PAGE paper.pdf diagrams/fig`
-3. Optional crop via Pillow (fractional coordinates `[left, upper, right, lower]`)
+2. Call `mcp__pdf-mcp__pdf_extract_images(path=PDF_PATH, pages=PAGE)`
+3. From returned images, pick the largest on the target page (by `width * height`)
+4. Decode base64 → save to `diagrams/<id>.png`
+
+**Fallback path — pdftoppm:**
+1. `pdftoppm -png -r 300 -f PAGE -l PAGE paper.pdf diagrams/fig`
+2. Optional crop via Pillow (fractional coordinates `[left, upper, right, lower]`)
 
 **Resolution check:** <800px in any dimension → warn user about projection blur.
 
 **Rules:**
 - Always attribute source: `"Source: Author et al., Year"`
 - Don't extract tables — rebuild with `addTable()`
-- For multi-figure pages, use `crop` to isolate each figure
+- For multi-figure pages with distinct embedded images: MCP may extract them separately (check `index` field). For overlapping/composite figures, use `crop` with pdftoppm
 
 ---
 
