@@ -72,6 +72,8 @@ Parse `$ARGUMENTS` to determine which action to run. If no action specified, ask
 27. **Text overflow prevention & padding** — PptxGenJS text boxes do NOT clip overflow — text that exceeds the box renders outside, overlapping elements below. **Three mandatory protections**: (a) `shrinkText: true` on ALL text boxes (maps to `<a:normAutofit/>`). **NEVER use `autoFit: true`** — it maps to `<a:spAutoFit/>` which expands the shape. (b) Card text uses `const px = x + 0.25, pw = w - 0.4` — giving 0.19" clear of accent bar and 0.15" from right edge. Title: `(px, y+0.1, pw, 0.4)`, body: `(px, y+0.48, pw, h-0.62)` with `margin: [2, 0, 8, 0]`. (c) **Vertical gap discipline**: every element placed below another must start ≥0.1" after the previous element's bottom. Use `gap()` helper to verify at script-generation time. Standalone `addText` calls between cards/formulas are the #1 source of overlap bugs — always compute y from the preceding element's known bottom, never approximate. **Content limit**: card body should have ≤4 short lines per inch of body height. If more text is needed, increase card height or split content.
 28. **Figure attribution** — figures extracted from papers must include source attribution (`Source: Author et al., Year`) via `addFigure()` caption. Width <800px requires warning to user about projection blur. Never extract tables — rebuild with PptxGenJS `addTable()`.
 29. **Visual-first planning** — audiences grasp structure through visual anchors, not bullet lists. During Phase 2, ask for each slide: "Can the audience understand this in 10 seconds from text alone?" If not, the slide needs a visual element (diagram, table, chart, or figure). Common signals: multi-step processes, component relationships, data comparisons, hierarchies, numerical trends — these almost always need visuals rather than prose. Phase 2 self-check: every section has ≥1 non-formula visual element; slides with zero visuals (no diagram, table, chart, or figure) must stay ≤30% of the deck.
+30. **Table cell formulas** — math notation inside table cells (`O(n)`, `ε`, `∑_{i}`, etc.) must use OMML placeholders (`{{MATH:id}}`), never Unicode approximations or plain text. Add each cell formula to `formulas.json` with `"render": "omml"`. OMML inherits the cell's font size (`F.tblCell.size` = 12pt) automatically. For complex constructs (fractions, large operators, stacked expressions) that would overflow cell height, use image rendering (`"render": "image"`) with `targetH` ≤ `rowH - 0.08`. Pass cell objects to `addTable` for OMML cells: `{text: "{{MATH:f42}}", options: {}}`.
+31. **Long table pagination** — tables exceeding the per-slide row limit (8-10 data rows) must be split across slides. Each continuation slide repeats the header row and appends " (cont'd)" to the slide title via `addTableCont()`. Split at logical row group boundaries (e.g., between algorithm families, metric categories, dataset groups) — never mid-group. The last page should have ≥3 data rows; if fewer, merge with the previous page. Each page gets its own caption/takeaway if the subset tells a different story.
 
 ---
 
@@ -101,6 +103,8 @@ Key points (always in context):
 | `icon-grid` | Multiple points with colored shapes |
 | `timeline` | Process / history flow |
 | `table` | Data comparison |
+| `table-with-insight` | Table + key finding card below |
+| `table-continuation` | Long table split page with " (cont'd)" |
 | `chart` | Chart/graph display |
 | `text-left-diagram-right` | Text + diagram side-by-side (55/45 split) |
 | `full-diagram` | Full-width diagram |
@@ -190,7 +194,7 @@ Detailed outline per section:
 
 #### Phase 3: Formula Preparation
 
-1. Scan Phase 2 structure, collect all formulas into a list.
+1. Scan Phase 2 structure, collect all formulas into a list. **Include table cell math** (R30): scan every planned table for cells containing subscripts, Greek letters, operators, or complexity notation — each becomes a separate `formulas.json` entry with `"render": "omml"`.
 2. Write `formulas.json` with `render` field (`"omml"` | `"image"` | `"auto"`; default `"auto"` → paragraph→image, else→omml):
    ```json
    [
@@ -234,11 +238,21 @@ For isolated formulas (display/inline): use OMML (default `render:"auto"` handle
    - **shapes** — simple annotations, arrows, highlights (PptxGenJS native — handle in Phase 4, not here)
    - **extract** — figures from paper PDFs (extract-figures workflow)
 3. Write `diagrams.json` (see `diagram-rendering.md` for schema).
-4. Run the renderer:
+4. **MCP pre-extraction** (for `type: "extract"` entries without `crop`):
+   For each such entry, try MCP extraction before running the batch renderer:
+   ```
+   mcp__pdf-mcp__pdf_extract_images(path=SOURCE_PDF, pages=PAGE)
+   ```
+   - From returned images, pick the largest on the target page (max `width * height`).
+   - Decode base64 → save to `diagrams/<id>.png`.
+   - If MCP returns no images or fails → leave for `render_diagrams.py` fallback.
+   - Entries with `crop` always skip MCP (page-region extraction needs pdftoppm).
+   - The batch renderer auto-skips IDs whose `.png` already exists on disk.
+5. Run the renderer:
    ```bash
    python ~/.claude/skills/powerpoint-slides/scripts/render_diagrams.py diagrams.json diagrams/ --theme <theme_name>
    ```
-5. Check `diagrams/manifest.json` for errors. Fix DOT/Mermaid syntax or degrade to PptxGenJS shapes.
+6. Check `diagrams/manifest.json` for errors. Fix DOT/Mermaid syntax or degrade to PptxGenJS shapes.
 
 **DOT writing guide:** max ~15 nodes, `rankdir=LR` for horizontal flows / `rankdir=TB` for vertical hierarchies, `subgraph cluster_*` for grouping.
 
@@ -321,12 +335,31 @@ Lower bounds are in R4/R20. Upper bounds prevent cognitive overload — a slide 
 
 ##### 4c. Table Best Practices
 
+**Layout & alignment:**
 - Column alignment: numbers right-aligned, text left-aligned, short labels centered
-- Max 6-7 columns, 8-10 rows per slide. More → split across slides or highlight a subset
+- Max 6-7 columns, 8-10 data rows per slide. More → split across slides (R31) or highlight a subset
+- Numeric precision: align decimal points within a column; use consistent significant digits (e.g., all "XX.X%" or all "X.XX"); thousands separator optional but must be consistent
+
+**Cell content:**
+- Math in cells must use OMML (R30) — scan every cell for subscripts, Greek letters, operators, complexity notation. Add each to `formulas.json` with `"render": "omml"`. Pass `{text: "{{MATH:id}}", options: {}}` to `addTable`
+- For cells mixing text and math (e.g., "achieves {{MATH:f12}} speedup"), use a single OMML placeholder wrapping the math portion — `inject_omml.py` handles mixed runs
+- Merged cells: use `colspan`/`rowspan` in cell options for grouped headers (e.g., "Complexity" spanning "Time" and "Space" columns). Keep merge depth ≤2 levels — deeper nesting harms readability
+
+**Highlighting & emphasis:**
 - Highlight key cells with bold or `ac.pos` color — draw the eye to the result
 - For comparison tables: bold the best result in each row/column
 - Use striped rows (via `addTable` helper) for readability in tables with >5 rows
-- Caption or insight below the table in `F.small.size` — never leave a table without a takeaway
+
+**Long table pagination (R31):**
+- Tables with >8-10 data rows → split across slides using `addTableCont()`
+- Each continuation slide repeats the full header row and marks the title with " (cont'd)"
+- Split at logical group boundaries; last page must have ≥3 data rows
+- Each page gets its own caption/takeaway if the subset tells a different story
+
+**Table + insight combo:**
+- Prefer a two-section layout: table in the upper 60%, insight card or key-finding bullets in the lower 40%
+- Never leave a table without a takeaway — at minimum a `F.small.size` caption line below
+- For "paper Table 1" reproductions: first the faithful table, then a separate insight slide highlighting the 2-3 most important rows/cells with explanation
 
 ##### 4d. Algorithm and Code Display
 
@@ -490,7 +523,8 @@ Read `content.md` to verify text content, notation consistency, spelling.
 [ ] No slide exceeds density upper bounds (7 bullets, 2 formulas, 5 symbols, 2 cards)
 [ ] No sparse slides (all slides have substantive content)
 [ ] Diagrams use theme colors (no default blue/black)
-[ ] Tables fit within content area, key cells highlighted
+[ ] Tables fit within content area, key cells highlighted, cell math uses OMML (R30)
+[ ] Long tables split with header repeat and "(cont'd)" marker (R31)
 [ ] Notation consistent throughout — same symbol = same meaning
 [ ] References slide present (second-to-last, before Thank You)
 [ ] Slide images visually inspected (at least spot-check 3-5 slides via QA agents)
@@ -657,7 +691,8 @@ PDF → image systematic visual review.
    - [ ] No element overlap
    - [ ] All text legible at presentation distance
    - [ ] Formula images crisp (not blurry/pixelated)
-   - [ ] Tables fit within slide width
+   - [ ] Tables fit within slide width, cell math rendered as OMML
+   - [ ] Long table continuations have repeated headers and "(cont'd)" title
    - [ ] Consistent font sizes across similar slides
    - [ ] Adequate text-background contrast
    - [ ] No visual clutter
@@ -676,24 +711,33 @@ PDF → image systematic visual review.
 
 ### 3.8 `extract-figures [file.pdf] [pages]`
 
-Extract figures from a paper PDF for use in slides.
+Extract figures from a paper PDF for use in slides. **MCP extraction first, pdftoppm fallback.**
 
 1. Identify target figures — use `pdf_get_toc` / `pdf_read_pages` to locate. If unsure, ask user.
-2. Write `diagrams.json` with `type: "extract"` entries, or extract directly:
-   ```bash
-   pdftoppm -png -r 300 -f PAGE -l PAGE paper.pdf diagrams/fig
+2. **Try MCP extraction** (primary path):
    ```
-3. If cropping needed, use Pillow to trim white margins and excess text regions.
-4. Run renderer to produce manifest (or add entries to existing `diagrams/manifest.json`):
-   ```bash
-   python ~/.claude/skills/powerpoint-slides/scripts/render_diagrams.py diagrams.json diagrams/
+   mcp__pdf-mcp__pdf_extract_images(path=PDF_PATH, pages=PAGES)
    ```
+   - Returns base64-encoded images with `{page, index, width, height, format, data}`.
+   - For each target page, pick the largest image (or let user choose if multiple).
+   - Decode base64 → save to `diagrams/<id>.png`:
+     ```bash
+     mkdir -p diagrams
+     echo "BASE64_DATA" | base64 -d > diagrams/<id>.png
+     ```
+3. **Fallback to pdftoppm** — use when MCP returns no images, or when page-region cropping is needed:
+   - Write `diagrams.json` with `type: "extract"` entries (include `crop` coordinates if needed).
+   - Run renderer:
+     ```bash
+     python ~/.claude/skills/powerpoint-slides/scripts/render_diagrams.py diagrams.json diagrams/
+     ```
+4. Update or create `diagrams/manifest.json` with extracted image metadata.
 
 **Rules:**
 - Must attribute source (`Source: Author et al., Year`) unless it's the user's own paper
 - Resolution check: <800px in any dimension → warn user about projection blur
 - Never extract tables — rebuild with `addTable()` for crisp rendering
-- Multi-figure pages: use `crop` field to isolate each figure separately
+- Multi-figure pages: MCP may return separate image objects per figure; if fused into one image, use pdftoppm + `crop`
 
 ### 3.9 `validate [file.pptx] [duration]`
 

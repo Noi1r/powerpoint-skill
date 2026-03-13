@@ -491,6 +491,65 @@ addTable(sl,
 );
 ```
 
+### Table with OMML Math (Pattern 10)
+
+```javascript
+// Table cells containing math use OMML placeholders — inject_omml.py replaces them post-generation
+const sl = pres.addSlide({ masterName: "CONTENT_SLIDE" });
+sTitle(sl, "Complexity Comparison");
+addTable(sl,
+  ["Algorithm", "Time", "Space", "Rounds"],
+  [
+    ["Naive",     {text: "{{MATH:f50}}", options: {}}, {text: "{{MATH:f51}}", options: {}}, "1"],
+    ["Ours",      {text: "{{MATH:f52}}", options: {}}, {text: "{{MATH:f53}}", options: {}}, {text: "{{MATH:f54}}", options: {}}],
+    ["Ours+Opt",  {text: "{{MATH:f55}}", options: {bold: true, color: T.ac.pos}}, {text: "{{MATH:f56}}", options: {}}, "1"],
+  ],
+  M, CY + 0.1, CW, [3, 2, 2, 2]
+);
+// formulas.json entries: {"id":"f50","latex":"O(n^2)","render":"omml"}, ...
+sl.addText("Bold green = best in column", { x: M, y: CY + 1.65, w: CW, h: 0.3,
+  fontFace: F.small.face, fontSize: F.small.size, color: T.tx.sec, shrinkText: true });
+```
+
+### Table + Insight (Pattern 11)
+
+```javascript
+// Upper 55%: table, lower 45%: insight card with key takeaway
+const sl = pres.addSlide({ masterName: "CONTENT_SLIDE" });
+sTitle(sl, "Benchmark Results");
+const tblY = CY + 0.1, tblRows = 4, rH = 0.35;
+addTable(sl,
+  ["Dataset", "Baseline", "Ours", "Δ"],
+  [
+    ["CIFAR-10",  "93.2%", "96.8%", {text: "+3.6%", options: {bold: true, color: T.ac.pos}}],
+    ["CIFAR-100", "74.1%", "79.5%", {text: "+5.4%", options: {bold: true, color: T.ac.pos}}],
+    ["ImageNet",  "76.3%", "78.9%", "+2.6%"],
+    ["Places365", "55.1%", "57.2%", "+2.1%"],
+  ],
+  M, tblY, CW, [3, 2, 2, 2], rH
+);
+const insY = tblY + rH * (tblRows + 1) + 0.15;
+addCard(sl, M, insY, CW, CH - (insY - CY) - 0.05, T.ac.pos,
+  "Key Finding",
+  "Largest gains on fine-grained tasks (CIFAR-100: +5.4%). Improvement correlates with number of categories — our method benefits most from richer label spaces."
+);
+```
+
+### Continuation Table (Pattern 12)
+
+```javascript
+// Page 1 of a long table (rows 1-8)
+const sl1 = pres.addSlide({ masterName: "CONTENT_SLIDE" });
+sTitle(sl1, "Full Results");
+addTable(sl1, headers, rowsPage1, M, CY + 0.1, CW, colWidths);
+sl1.addText("Continued on next slide", { x: M, y: SH - M - 0.25, w: CW, h: 0.25,
+  fontFace: F.caption.face, fontSize: F.caption.size, color: T.tx.mut, align: "right", shrinkText: true });
+
+// Page 2 — uses addTableCont which auto-adds " (cont'd)" to title
+const sl2 = pres.addSlide({ masterName: "CONTENT_SLIDE" });
+addTableCont(sl2, "Full Results", headers, rowsPage2, M, CY + 0.1, CW, colWidths);
+```
+
 ### Stat Callout
 
 ```javascript

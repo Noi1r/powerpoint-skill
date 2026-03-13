@@ -348,14 +348,23 @@ function addTable(sl, headers, rows, x, y, w, colW, rowH = 0.35) {
     bold: true, fontFace: F.tblHead.face, fontSize: F.tblHead.size,
     align: "center", valign: "middle"
   }}));
-  const dRows = rows.map((row, i) => row.map(cell => ({
-    text: String(cell), options: {
+  const dRows = rows.map((row, i) => row.map(cell => {
+    const isObj = typeof cell === "object" && cell !== null;
+    const txt = isObj ? cell.text : String(cell);
+    const base = {
       fill: { color: i % 2 === 0 ? "FFFFFF" : "F0F2F5" },
       fontFace: F.tblCell.face, fontSize: F.tblCell.size,
       color: T.tx.pri, valign: "middle"
-    }
-  })));
+    };
+    return { text: txt, options: isObj ? { ...base, ...cell.options } : base };
+  }));
   sl.addTable([hRow, ...dRows], { x, y, w, colW, border: { pt: 0.5, color: "E0E0E0" } });
+}
+
+// Continuation table page — repeats header, adds " (cont'd)" to slide title
+function addTableCont(sl, title, headers, rows, x, y, w, colW, rowH = 0.35) {
+  sTitle(sl, title + " (cont'd)");
+  addTable(sl, headers, rows, x, y, w, colW, rowH);
 }
 
 function addNumCard(sl, num, title, body, x, y, w, h, color) {
@@ -425,6 +434,9 @@ pres.writeFile({ fileName: "output.pptx" });
 | Major | Extracted figure without source attribution (R26) | -5/instance |
 | Major | Chart colors don't match theme `T.chart[]` palette | -5/instance |
 | Major | Chart axis labels unreadable or overlapping | -5/instance |
+| Major | Table cell math as Unicode text instead of OMML (R30) | -5/instance |
+| Major | Long table missing header repeat or "(cont'd)" on continuation page (R31) | -8/table |
+| Major | Table without caption or takeaway line below | -5/instance |
 
 ## Quality Scoring Rubric
 
